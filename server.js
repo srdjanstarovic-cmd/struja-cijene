@@ -578,19 +578,18 @@ app.listen(PORT, async () => {
     cachedData = await fetchAllPrices();
     try { await checkNegativePrices(cachedData); } catch (e) { console.error("  Alarm greška:", e.message); }
 
-    // Catch-up: ako je kompjuter spavao i propustio 06:00 mail, posalji cim se probudi
+    // Catch-up: ako je server restartovan i propustio 22:00 UTC (23:00 CET) mail
     const now = new Date();
-    const today = now.toISOString().slice(0, 10);
     const tomorrow = new Date(now); tomorrow.setDate(tomorrow.getDate() + 1);
-    const tomorrowStr = tomorrow.toISOString().slice(0, 10);
-    if (now.getHours() >= 6 && dayAheadEmailSentDate !== tomorrowStr) {
+    const tomorrowStr = getCET(tomorrow).datum;
+    if (now.getUTCHours() >= 22 && dayAheadEmailSentDate !== tomorrowStr) {
       console.log(`[${now.toISOString()}] Catch-up: saljem propusteni day-ahead email...`);
       try { await sendDayAheadEmail(cachedData); } catch (e) { console.error("  Email greška:", e.message); }
     }
   });
 
-  // Cron: svaki dan u 06:00 — posalje day-ahead email
-  cron.schedule("0 6 * * *", async () => {
+  // Cron: svaki dan u 22:00 UTC (= 23:00 CET zimsko / 00:00 CEST ljetno)
+  cron.schedule("0 22 * * *", async () => {
     console.log(`[${new Date().toISOString()}] Saljem day-ahead email...`);
     try {
       await sendDayAheadEmail(cachedData);
@@ -600,5 +599,5 @@ app.listen(PORT, async () => {
   });
 
   console.log("Cron job: dohvaca podatke svakih sat u :00");
-  console.log("Cron job: salje day-ahead email svaki dan u 06:00\n");
+  console.log("Cron job: salje day-ahead email svaki dan u 22:00 UTC (23:00 CET)\n");
 });
