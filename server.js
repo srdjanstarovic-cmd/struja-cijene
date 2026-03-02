@@ -13,14 +13,14 @@ const app  = express();
 const PORT = process.env.PORT || 4000;
 
 // ENTSO-E token za CROPEX (HR) - opciono
-const ENTSOE_TOKEN = process.env.ENTSOE_TOKEN || "992cccb1-80c1-4f30-a8dc-291745e9ec18";
+const ENTSOE_TOKEN = process.env.ENTSOE_TOKEN || "";
 
 // ─────────────────────────────────────────────
 // Email konfiguracija
 // ─────────────────────────────────────────────
-const EMAIL_FROM  = process.env.EMAIL_FROM  || "sstarovic@socialgist.com";
-const EMAIL_PASS  = process.env.EMAIL_PASS  || "wpradklbrealflyp";
-const EMAIL_TO    = process.env.EMAIL_TO    || "srdjan.starovic@siming.ba";
+const EMAIL_FROM  = process.env.EMAIL_FROM  || "";
+const EMAIL_PASS  = process.env.EMAIL_PASS  || "";
+const EMAIL_TO    = process.env.EMAIL_TO    || "";
 
 // Putanja gdje se cuvaju podaci
 const DATA_FILE = path.join(__dirname, "data.json");
