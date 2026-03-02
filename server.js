@@ -141,25 +141,34 @@ async function fetchENTSOE(domain, label, zoneCode) {
     return null;
   }
 
-  const rows = [];
+  const byHour = {};
   const periods = res.body.match(/<Period>([\s\S]*?)<\/Period>/g) || [];
   periods.forEach((period) => {
-    const startMatch = period.match(/<start>(.*?)<\/start>/);
+    const startMatch      = period.match(/<start>(.*?)<\/start>/);
+    const resolutionMatch = period.match(/<resolution>(.*?)<\/resolution>/);
     if (!startMatch) return;
     const periodStart = new Date(startMatch[1]);
+    const resolution  = resolutionMatch ? resolutionMatch[1] : "PT60M";
+    const intervalMs  = resolution === "PT15M" ? 900000 : resolution === "PT30M" ? 1800000 : 3600000;
+
     const points = period.match(/<Point>([\s\S]*?)<\/Point>/g) || [];
     points.forEach((point) => {
       const pos   = point.match(/<position>(\d+)<\/position>/);
       const price = point.match(/<price\.amount>([\d.]+)<\/price\.amount>/);
       if (!pos || !price) return;
-      const dt = new Date(periodStart.getTime() + (parseInt(pos[1]) - 1) * 3600000);
-      rows.push({
-        datum: dt.toISOString().slice(0, 10),
-        sat:   `${String(dt.getUTCHours()).padStart(2, "0")}:00`,
-        value: Number(Number(price[1]).toFixed(2)),
-      });
+      const dt    = new Date(periodStart.getTime() + (parseInt(pos[1]) - 1) * intervalMs);
+      const datum = dt.toISOString().slice(0, 10);
+      const sat   = `${String(dt.getUTCHours()).padStart(2, "0")}:00`;
+      const key   = `${datum}_${sat}`;
+      if (!byHour[key]) byHour[key] = { datum, sat, sum: 0, count: 0 };
+      byHour[key].sum += parseFloat(price[1]);
+      byHour[key].count++;
     });
   });
+
+  const rows = Object.values(byHour)
+    .map(r => ({ datum: r.datum, sat: r.sat, value: Number((r.sum / r.count).toFixed(2)) }))
+    .sort((a, b) => `${a.datum}${a.sat}`.localeCompare(`${b.datum}${b.sat}`));
 
   return { label, zone: zoneCode, data: rows };
 }
