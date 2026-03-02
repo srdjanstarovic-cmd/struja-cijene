@@ -123,7 +123,10 @@ async function fetchCROPEX() {
 
 // ENTSO-E genericki fetcher (za CROPEX i HUPX)
 async function fetchENTSOE(domain, label, zoneCode) {
-  if (!ENTSOE_TOKEN || ENTSOE_TOKEN === "TVOJ_TOKEN_OVDJE") return null;
+  if (!ENTSOE_TOKEN || ENTSOE_TOKEN === "TVOJ_TOKEN_OVDJE") {
+    console.log(`  ${label}: preskocen — ENTSOE_TOKEN nije postavljen`);
+    return null;
+  }
 
   const today    = new Date();
   const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
@@ -133,7 +136,10 @@ async function fetchENTSOE(domain, label, zoneCode) {
 
   const url = `https://web-api.tp.entsoe.eu/api?documentType=A44&in_Domain=${domain}&out_Domain=${domain}&periodStart=${yStr}2300&periodEnd=${tStr}2300&securityToken=${ENTSOE_TOKEN}`;
   const res = await get(url);
-  if (res.status !== 200) return null;
+  if (res.status !== 200) {
+    console.error(`  ${label}: HTTP ${res.status} — ${res.body.slice(0, 200)}`);
+    return null;
+  }
 
   const rows = [];
   const periods = res.body.match(/<Period>([\s\S]*?)<\/Period>/g) || [];
@@ -505,6 +511,20 @@ app.get("/api/refresh", async (req, res) => {
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message });
   }
+});
+
+app.get("/api/status", (req, res) => {
+  const status = {
+    token: ENTSOE_TOKEN ? `postavljen (${ENTSOE_TOKEN.slice(0, 8)}...)` : "NIJE POSTAVLJEN",
+    email: EMAIL_FROM || "nije postavljen",
+    updatedAt: cachedData.updatedAt || "nikad",
+    markets: {},
+  };
+  ["epex", "seepex", "cropex", "hupx", "mepx", "bsp", "epexhu"].forEach(k => {
+    const m = cachedData[k];
+    status.markets[k] = m ? `${m.data.length} sati` : "nema podataka";
+  });
+  res.json(status);
 });
 
 app.get("/api/send-email", async (req, res) => {
