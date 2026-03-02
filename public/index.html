@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html lang="sr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cijene Struje — EPEX / SEEPEX / CROPEX / HUPX</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: #0d1117;
+      color: #e6edf3;
+      min-height: 100vh;
+    }
+
+    header {
+      background: #161b22;
+      border-bottom: 1px solid #21262d;
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    header h1 { font-size: 1.2rem; font-weight: 700; color: #f0f6fc; }
+    header h1 span { color: #58a6ff; }
+
+    .updated {
+      font-size: 0.78rem;
+      color: #8b949e;
+    }
+
+    .refresh-btn {
+      background: #21262d;
+      border: 1px solid #30363d;
+      color: #c9d1d9;
+      padding: 6px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.82rem;
+      transition: background 0.2s;
+    }
+    .refresh-btn:hover { background: #30363d; }
+    .refresh-btn:disabled { opacity: 0.5; cursor: default; }
+
+    .container { max-width: 1300px; margin: 0 auto; padding: 24px 16px; }
+
+    /* Stat cards */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+
+    .stat-card {
+      background: #161b22;
+      border: 1px solid #21262d;
+      border-radius: 10px;
+      padding: 16px;
+    }
+
+    .stat-card .label { font-size: 0.72rem; color: #8b949e; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+    .stat-card .value { font-size: 1.6rem; font-weight: 700; }
+    .stat-card .sub   { font-size: 0.75rem; color: #8b949e; margin-top: 4px; }
+    .stat-card.epex .value   { color: #58a6ff; }
+    .stat-card.seepex .value { color: #3fb950; }
+    .stat-card.cropex .value { color: #d29922; }
+    .stat-card.hupx .value   { color: #f78166; }
+    .stat-card.mepx .value   { color: #a371f7; }
+    .stat-card.bsp .value    { color: #39d353; }
+    .stat-card.epexhu .value { color: #ffa657; }
+
+    /* Tabs */
+    .tabs {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 16px;
+      border-bottom: 1px solid #21262d;
+    }
+
+    .tab {
+      padding: 8px 18px;
+      font-size: 0.88rem;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      color: #8b949e;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .tab:hover { color: #c9d1d9; }
+    .tab.active { color: #f0f6fc; border-bottom-color: #58a6ff; }
+
+    /* Chart */
+    .chart-container {
+      background: #161b22;
+      border: 1px solid #21262d;
+      border-radius: 10px;
+      padding: 20px;
+      margin-bottom: 24px;
+      position: relative;
+      height: 360px;
+    }
+
+    /* Date filter */
+    .controls {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+    }
+
+    .controls select, .controls input[type=date] {
+      background: #161b22;
+      border: 1px solid #30363d;
+      color: #e6edf3;
+      padding: 6px 10px;
+      border-radius: 6px;
+      font-size: 0.84rem;
+    }
+
+    .controls label { font-size: 0.82rem; color: #8b949e; }
+
+    /* Table */
+    .table-wrap {
+      background: #161b22;
+      border: 1px solid #21262d;
+      border-radius: 10px;
+      overflow: hidden;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+    }
+
+    thead tr { background: #1c2128; }
+
+    th {
+      padding: 10px 14px;
+      text-align: left;
+      font-size: 0.72rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #8b949e;
+      cursor: pointer;
+      user-select: none;
+    }
+    th:hover { color: #c9d1d9; }
+
+    td {
+      padding: 9px 14px;
+      border-top: 1px solid #21262d;
+      color: #c9d1d9;
+    }
+
+    tr:hover td { background: #1c2128; }
+
+    .price-pos { color: #3fb950; font-weight: 600; }
+    .price-neg { color: #f85149; font-weight: 600; }
+    .price-zero { color: #8b949e; }
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 0.72rem;
+      font-weight: 600;
+    }
+    .badge-epex   { background: rgba(88,166,255,0.15); color: #58a6ff; }
+    .badge-seepex { background: rgba(63,185,80,0.15);  color: #3fb950; }
+    .badge-cropex { background: rgba(210,153,34,0.15); color: #d29922; }
+    .badge-hupx   { background: rgba(247,129,102,0.15); color: #f78166; }
+    .badge-mepx   { background: rgba(163,113,247,0.15); color: #a371f7; }
+    .badge-bsp    { background: rgba(57,211,83,0.15);  color: #39d353; }
+    .badge-epexhu { background: rgba(255,166,87,0.15); color: #ffa657; }
+
+    .loading {
+      text-align: center;
+      padding: 60px;
+      color: #8b949e;
+      font-size: 1rem;
+    }
+
+    .no-data {
+      text-align: center;
+      padding: 40px;
+      color: #8b949e;
+      font-size: 0.88rem;
+    }
+
+    .sort-icon { margin-left: 4px; opacity: 0.5; }
+
+    .day-btns { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+    .day-btn {
+      padding: 6px 16px;
+      border-radius: 20px;
+      border: 1px solid #30363d;
+      background: #161b22;
+      color: #8b949e;
+      cursor: pointer;
+      font-size: 0.82rem;
+      transition: all 0.15s;
+    }
+    .day-btn:hover { border-color: #58a6ff; color: #c9d1d9; }
+    .day-btn.active { background: #1f4068; border-color: #58a6ff; color: #58a6ff; font-weight: 600; }
+    .day-btn.da { border-color: #3fb950; color: #3fb950; }
+    .day-btn.da.active { background: #0d2818; border-color: #3fb950; color: #3fb950; }
+
+    .da-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 24px; }
+    .da-card {
+      background: #161b22;
+      border: 1px solid #21262d;
+      border-radius: 10px;
+      padding: 14px 16px;
+    }
+    .da-card .label { font-size: 0.72rem; color: #8b949e; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
+    .da-card .min  { color: #3fb950; font-weight: 700; font-size: 1.1rem; }
+    .da-card .max  { color: #f85149; font-weight: 700; font-size: 1.1rem; }
+    .da-card .avg2 { color: #58a6ff; font-weight: 700; font-size: 1.1rem; }
+    .da-card .sub  { font-size: 0.72rem; color: #8b949e; margin-top: 2px; }
+    .da-section-title { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 1.5px; color: #8b949e; margin-bottom: 10px; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>Cijene Struje — <span>EPEX</span> / <span style="color:#3fb950">SEEPEX</span> / <span style="color:#a371f7">MEPX</span> / <span style="color:#39d353">BSP</span> / <span style="color:#ffa657">EPEX HU</span> / <span style="color:#d29922">CROPEX</span> / <span style="color:#f78166">HUPX</span></h1>
+  </div>
+  <div style="display:flex;align-items:center;gap:16px">
+    <span class="updated" id="updatedAt">Učitavam...</span>
+    <button class="refresh-btn" onclick="refreshData()" id="refreshBtn">↻ Osvježi</button>
+  </div>
+</header>
+
+<div class="container">
+
+  <!-- Stat cards -->
+  <div class="stats-grid" id="statsGrid">
+    <div class="stat-card hupx">
+      <div class="label">HUPX trenutna cijena</div>
+      <div class="value" id="hupxCurrent">—</div>
+      <div class="sub">EUR/MWh · HU</div>
+    </div>
+    <div class="stat-card seepex">
+      <div class="label">SEEPEX trenutna cijena</div>
+      <div class="value" id="seepexCurrent">—</div>
+      <div class="sub">EUR/MWh · RS</div>
+    </div>
+    <div class="stat-card cropex">
+      <div class="label">CROPEX trenutna cijena</div>
+      <div class="value" id="cropexCurrent">—</div>
+      <div class="sub">EUR/MWh · HR</div>
+    </div>
+  </div>
+  <div style="margin-bottom:12px">
+    <button class="day-btn" id="extraStatsBtn" onclick="toggleExtraStats()" style="font-size:0.8rem">▼ Učitaj još</button>
+  </div>
+  <div class="stats-grid" id="statsGridExtra" style="display:none; margin-bottom:24px">
+    <div class="stat-card epex">
+      <div class="label">EPEX trenutna cijena</div>
+      <div class="value" id="epexCurrent">—</div>
+      <div class="sub">EUR/MWh · DE-LU</div>
+    </div>
+    <div class="stat-card mepx">
+      <div class="label">MEPX trenutna cijena</div>
+      <div class="value" id="mepxCurrent">—</div>
+      <div class="sub">EUR/MWh · ME</div>
+    </div>
+    <div class="stat-card bsp">
+      <div class="label">BSP trenutna cijena</div>
+      <div class="value" id="bspCurrent">—</div>
+      <div class="sub">EUR/MWh · SI</div>
+    </div>
+    <div class="stat-card epexhu">
+      <div class="label">EPEX HU trenutna cijena</div>
+      <div class="value" id="epexhuCurrent">—</div>
+      <div class="sub">EUR/MWh · HU (EPEX)</div>
+    </div>
+    <div class="stat-card" style="border-color:#21262d">
+      <div class="label">Prosječna EPEX danas</div>
+      <div class="value" id="epexAvg" style="color:#8b949e">—</div>
+      <div class="sub">EUR/MWh · prosjek</div>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <div class="tab active" onclick="setTab('chart', this)">Grafikon</div>
+    <div class="tab" onclick="setTab('table', this)">Tabela</div>
+  </div>
+
+  <!-- Day Ahead brzi filteri -->
+  <div class="day-btns">
+    <button class="day-btn" id="btnYesterday" onclick="setDay('yesterday')">◀ Juče</button>
+    <button class="day-btn active" id="btnToday" onclick="setDay('today')">Danas</button>
+    <button class="day-btn da" id="btnTomorrow" onclick="setDay('tomorrow')">Sutra — Day Ahead ▶</button>
+  </div>
+
+  <!-- Day Ahead statistike (vidljivo samo kad je sutra odabrano) -->
+  <div id="daSection" style="display:none; margin-bottom:20px;">
+    <div class="da-section-title">Day Ahead statistike — sutra (moje berze)</div>
+    <div class="da-cards">
+      <div class="da-card"><div class="label" style="color:#f78166">HUPX Min</div><div class="min" id="daHupxMin">—</div><div class="sub">EUR/MWh</div></div>
+      <div class="da-card"><div class="label" style="color:#f78166">HUPX Max</div><div class="max" id="daHupxMax">—</div><div class="sub">EUR/MWh</div></div>
+      <div class="da-card"><div class="label" style="color:#f78166">HUPX Prosjek</div><div class="avg2" id="daHupxAvg">—</div><div class="sub">EUR/MWh</div></div>
+      <div class="da-card"><div class="label" style="color:#3fb950">SEEPEX Min</div><div class="min" id="daSeepexMin">—</div><div class="sub">EUR/MWh</div></div>
+      <div class="da-card"><div class="label" style="color:#3fb950">SEEPEX Max</div><div class="max" id="daSeepexMax">—</div><div class="sub">EUR/MWh</div></div>
+      <div class="da-card"><div class="label" style="color:#3fb950">SEEPEX Prosjek</div><div class="avg2" id="daSeepexAvg">—</div><div class="sub">EUR/MWh</div></div>
+      <div class="da-card"><div class="label" style="color:#d29922">CROPEX Min</div><div class="min" id="daCropexMin">—</div><div class="sub">EUR/MWh</div></div>
+      <div class="da-card"><div class="label" style="color:#d29922">CROPEX Max</div><div class="max" id="daCropexMax">—</div><div class="sub">EUR/MWh</div></div>
+      <div class="da-card"><div class="label" style="color:#d29922">CROPEX Prosjek</div><div class="avg2" id="daCropexAvg">—</div><div class="sub">EUR/MWh</div></div>
+    </div>
+    <div style="margin:10px 0 12px">
+      <button class="day-btn" id="daExtraBtn" onclick="toggleDaExtra()" style="font-size:0.8rem">▼ Učitaj još</button>
+    </div>
+    <div id="daCardsExtra" style="display:none">
+      <div class="da-section-title">Ostale berze</div>
+      <div class="da-cards">
+        <div class="da-card"><div class="label">EPEX Min</div><div class="min" id="daEpexMin">—</div><div class="sub">EUR/MWh</div></div>
+        <div class="da-card"><div class="label">EPEX Max</div><div class="max" id="daEpexMax">—</div><div class="sub">EUR/MWh</div></div>
+        <div class="da-card"><div class="label">EPEX Prosjek</div><div class="avg2" id="daEpexAvg">—</div><div class="sub">EUR/MWh</div></div>
+        <div class="da-card"><div class="label">MEPX Min</div><div class="min" id="daMepxMin">—</div><div class="sub">EUR/MWh</div></div>
+        <div class="da-card"><div class="label">MEPX Max</div><div class="max" id="daMepxMax">—</div><div class="sub">EUR/MWh</div></div>
+        <div class="da-card"><div class="label">MEPX Prosjek</div><div class="avg2" id="daMepxAvg">—</div><div class="sub">EUR/MWh</div></div>
+        <div class="da-card"><div class="label">BSP Min</div><div class="min" id="daBspMin">—</div><div class="sub">EUR/MWh</div></div>
+        <div class="da-card"><div class="label">BSP Max</div><div class="max" id="daBspMax">—</div><div class="sub">EUR/MWh</div></div>
+        <div class="da-card"><div class="label">BSP Prosjek</div><div class="avg2" id="daBspAvg">—</div><div class="sub">EUR/MWh</div></div>
+        <div class="da-card"><div class="label" style="color:#ffa657">EPEX HU Min</div><div class="min" id="daEpexhuMin">—</div><div class="sub">EUR/MWh</div></div>
+        <div class="da-card"><div class="label" style="color:#ffa657">EPEX HU Max</div><div class="max" id="daEpexhuMax">—</div><div class="sub">EUR/MWh</div></div>
+        <div class="da-card"><div class="label" style="color:#ffa657">EPEX HU Prosjek</div><div class="avg2" id="daEpexhuAvg">—</div><div class="sub">EUR/MWh</div></div>
+      </div>
+    </div>
+    <div id="daEpexNote" style="display:none; font-size:0.78rem; color:#8b949e; margin-top:8px;">
+      * EPEX day-ahead podaci za sutra još nisu objavljeni (objavljuju se ~13:00 CET). Osvježi stranicu poslijepodne.
+    </div>
+  </div>
+
+  <!-- Controls -->
+  <div class="controls">
+    <label>Berza:</label>
+    <select id="marketFilter" onchange="renderAll()">
+      <option value="moje" selected>★ Moje berze</option>
+      <option value="all">Sve berze</option>
+      <option value="hupx">HUPX</option>
+      <option value="seepex">SEEPEX</option>
+      <option value="cropex">CROPEX</option>
+      <option value="epex">EPEX SPOT</option>
+      <option value="mepx">MEPX</option>
+      <option value="bsp">BSP SouthPool</option>
+      <option value="epexhu">EPEX HU</option>
+    </select>
+    <label>Datum:</label>
+    <input type="date" id="dateFilter" onchange="onDateChange()">
+  </div>
+
+  <!-- Chart view -->
+  <div id="chartView">
+    <div class="chart-container">
+      <canvas id="priceChart"></canvas>
+    </div>
+    <div id="chartNote" style="display:none; font-size:0.78rem; color:#8b949e; margin-top:8px; padding:6px 10px; background:#161b22; border:1px solid #21262d; border-radius:6px;">
+      ℹ️ <strong>HUPX</strong> i <strong>CROPEX</strong> ne prikazuju cijene za danas — spot cijene za HU/HR tržišta nisu dostupne u realnom vremenu putem javnih API-ja. Za sutra (Day Ahead) podaci su dostupni.
+    </div>
+  </div>
+
+  <!-- Table view -->
+  <div id="tableView" style="display:none">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th onclick="sortTable('izvor')">Berza <span class="sort-icon">↕</span></th>
+            <th onclick="sortTable('datum')">Datum <span class="sort-icon">↕</span></th>
+            <th onclick="sortTable('sat')">Sat <span class="sort-icon">↕</span></th>
+            <th onclick="sortTable('value')">EUR/MWh <span class="sort-icon">↕</span></th>
+          </tr>
+        </thead>
+        <tbody id="tableBody">
+          <tr><td colspan="4" class="loading">Učitavam podatke...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<script>
+let allData = {};
+let chart = null;
+let sortBy = 'sat';
+let sortAsc = true;
+
+async function loadData() {
+  const res = await fetch('/api/prices');
+  allData = await res.json();
+  renderAll();
+  updateStats();
+  updateTimestamp();
+}
+
+async function refreshData() {
+  const btn = document.getElementById('refreshBtn');
+  btn.disabled = true;
+  btn.textContent = '↻ Osvježavam...';
+  try {
+    const res = await fetch('/api/refresh');
+    await res.json();
+    await loadData();
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '↻ Osvježi';
+  }
+}
+
+function getFilteredRows() {
+  const market = document.getElementById('marketFilter').value;
+  const date   = document.getElementById('dateFilter').value;
+  const rows   = [];
+
+  const sources = {
+    epex:   allData.epex,
+    seepex: allData.seepex,
+    cropex: allData.cropex,
+    hupx:   allData.hupx,
+    mepx:   allData.mepx,
+    bsp:    allData.bsp,
+    epexhu: allData.epexhu,
+  };
+
+  const mojeSet = new Set(['hupx', 'seepex', 'cropex']);
+
+  Object.entries(sources).forEach(([key, src]) => {
+    if (!src) return;
+    if (market === 'moje' && !mojeSet.has(key)) return;
+    if (market !== 'all' && market !== 'moje' && market !== key) return;
+    src.data.forEach(r => {
+      if (date && r.datum !== date) return;
+      rows.push({ izvor: src.label, izvorKey: key, datum: r.datum, sat: r.sat, value: r.value });
+    });
+  });
+
+  return rows;
+}
+
+function renderAll() {
+  renderChart();
+  renderTable();
+}
+
+function renderChart() {
+  const market = document.getElementById('marketFilter').value;
+  const date   = document.getElementById('dateFilter').value;
+
+  const colors = {
+    epex:   { border: '#58a6ff', bg: 'rgba(88,166,255,0.1)' },
+    seepex: { border: '#3fb950', bg: 'rgba(63,185,80,0.1)'  },
+    cropex: { border: '#d29922', bg: 'rgba(210,153,34,0.1)' },
+    hupx:   { border: '#f78166', bg: 'rgba(247,129,102,0.1)' },
+    mepx:   { border: '#a371f7', bg: 'rgba(163,113,247,0.1)' },
+    bsp:    { border: '#39d353', bg: 'rgba(57,211,83,0.1)'   },
+    epexhu: { border: '#ffa657', bg: 'rgba(255,166,87,0.1)'  },
+  };
+
+  const sources = {
+    epex:   allData.epex,
+    seepex: allData.seepex,
+    cropex: allData.cropex,
+    hupx:   allData.hupx,
+    mepx:   allData.mepx,
+    bsp:    allData.bsp,
+    epexhu: allData.epexhu,
+  };
+
+  // Prikupi sve labele (sati) od odabranog datuma
+  const today = date || new Date().toISOString().slice(0, 10);
+  const labels = Array.from({length: 24}, (_, i) => `${String(i).padStart(2,'0')}:00`);
+
+  const datasets = [];
+
+  const mojeSet = new Set(['hupx', 'seepex', 'cropex']);
+
+  Object.entries(sources).forEach(([key, src]) => {
+    if (!src) return;
+    if (market === 'moje' && !mojeSet.has(key)) return;
+    if (market !== 'all' && market !== 'moje' && market !== key) return;
+
+    const hourMap = {};
+    src.data.filter(r => r.datum === today).forEach(r => { hourMap[r.sat] = r.value; });
+
+    datasets.push({
+      label: src.label,
+      data: labels.map(h => hourMap[h] !== undefined ? hourMap[h] : null),
+      borderColor: colors[key].border,
+      backgroundColor: colors[key].bg,
+      borderWidth: 2,
+      pointRadius: 3,
+      tension: 0.3,
+      spanGaps: false,
+    });
+  });
+
+  // Prikazi napomenu ako moje berze nemaju podatke za danas
+  const note = document.getElementById('chartNote');
+  const isMoje = market === 'moje' || market === 'hupx' || market === 'cropex';
+  const hasDataToday = datasets.some(ds => ds.data.some(v => v !== null));
+  note.style.display = (isMoje && !hasDataToday) ? '' : 'none';
+
+  const ctx = document.getElementById('priceChart').getContext('2d');
+  if (chart) chart.destroy();
+
+  chart = new Chart(ctx, {
+    type: 'line',
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: {
+          labels: { color: '#8b949e', font: { size: 12 } }
+        },
+        tooltip: {
+          backgroundColor: '#161b22',
+          borderColor: '#30363d',
+          borderWidth: 1,
+          titleColor: '#f0f6fc',
+          bodyColor: '#c9d1d9',
+          callbacks: {
+            label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y !== null ? ctx.parsed.y.toFixed(2) + ' EUR/MWh' : 'N/A'}`,
+          }
+        }
+      },
+      scales: {
+        x: {
+          ticks: { color: '#8b949e', maxTicksLimit: 12 },
+          grid:  { color: '#21262d' },
+        },
+        y: {
+          ticks: {
+            color: '#8b949e',
+            callback: v => v + ' €'
+          },
+          grid: { color: '#21262d' },
+          title: { display: true, text: 'EUR/MWh', color: '#8b949e' }
+        }
+      }
+    }
+  });
+}
+
+function renderTable() {
+  const tbody = document.getElementById('tableBody');
+  let rows = getFilteredRows();
+
+  if (rows.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="4" class="no-data">Nema podataka za odabrani filter</td></tr>';
+    return;
+  }
+
+  // Sort
+  rows.sort((a, b) => {
+    let av = a[sortBy], bv = b[sortBy];
+    if (sortBy === 'value') { av = av ?? -Infinity; bv = bv ?? -Infinity; }
+    return sortAsc ? (av > bv ? 1 : -1) : (av < bv ? 1 : -1);
+  });
+
+  tbody.innerHTML = rows.map(r => {
+    const priceClass = r.value === null ? '' : r.value > 0 ? 'price-pos' : r.value < 0 ? 'price-neg' : 'price-zero';
+    const priceStr   = r.value !== null ? r.value.toFixed(2) : 'N/A';
+    const badgeClass = `badge-${r.izvorKey}`;
+    return `<tr>
+      <td><span class="badge ${badgeClass}">${r.izvor}</span></td>
+      <td>${r.datum}</td>
+      <td>${r.sat}</td>
+      <td class="${priceClass}">${priceStr}</td>
+    </tr>`;
+  }).join('');
+}
+
+function sortTable(col) {
+  if (sortBy === col) sortAsc = !sortAsc;
+  else { sortBy = col; sortAsc = true; }
+  renderTable();
+}
+
+function updateStats() {
+  const now    = new Date();
+  const hour   = `${String(now.getHours()).padStart(2,'0')}:00`;
+  const today  = now.toISOString().slice(0, 10);
+
+  const getCurrent = (src) => {
+    if (!src) return '—';
+    const match = src.data.find(r => r.datum === today && r.sat === hour);
+    if (match && match.value !== null) return match.value.toFixed(2);
+    // Uzmi zadnji dostupni sat
+    const available = src.data.filter(r => r.value !== null);
+    if (available.length) return available[available.length - 1].value.toFixed(2);
+    return '—';
+  };
+
+  document.getElementById('epexCurrent').textContent   = getCurrent(allData.epex);
+  document.getElementById('seepexCurrent').textContent = getCurrent(allData.seepex);
+  document.getElementById('cropexCurrent').textContent = getCurrent(allData.cropex);
+  document.getElementById('hupxCurrent').textContent   = getCurrent(allData.hupx);
+  document.getElementById('mepxCurrent').textContent   = getCurrent(allData.mepx);
+  document.getElementById('bspCurrent').textContent    = getCurrent(allData.bsp);
+  document.getElementById('epexhuCurrent').textContent = getCurrent(allData.epexhu);
+
+  if (allData.epex) {
+    const todayData = allData.epex.data.filter(r => r.datum === today && r.value !== null);
+    if (todayData.length) {
+      const avg = todayData.reduce((s, r) => s + r.value, 0) / todayData.length;
+      document.getElementById('epexAvg').textContent = avg.toFixed(2);
+    }
+  }
+}
+
+function updateTimestamp() {
+  if (allData.updatedAt) {
+    const d = new Date(allData.updatedAt);
+    document.getElementById('updatedAt').textContent = `Ažurirano: ${d.toLocaleString('sr-Latn-RS')}`;
+  }
+}
+
+function setTab(tab, el) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('chartView').style.display = tab === 'chart' ? '' : 'none';
+  document.getElementById('tableView').style.display = tab === 'table' ? '' : 'none';
+}
+
+function getDateStr(offset) {
+  const d = new Date();
+  d.setDate(d.getDate() + offset);
+  return d.toISOString().slice(0, 10);
+}
+
+function setDay(day) {
+  document.querySelectorAll('.day-btn').forEach(b => b.classList.remove('active'));
+  const map = { yesterday: 'btnYesterday', today: 'btnToday', tomorrow: 'btnTomorrow' };
+  document.getElementById(map[day]).classList.add('active');
+
+  const offsets = { yesterday: -1, today: 0, tomorrow: 1 };
+  document.getElementById('dateFilter').value = getDateStr(offsets[day]);
+
+  const isDayAhead = day === 'tomorrow';
+  document.getElementById('daSection').style.display = isDayAhead ? '' : 'none';
+  if (isDayAhead) updateDayAheadStats();
+
+  renderAll();
+}
+
+function onDateChange() {
+  // Ukloni active sa brzih dugmadi kad korisnik rucno bira datum
+  document.querySelectorAll('.day-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('daSection').style.display = 'none';
+  renderAll();
+}
+
+function updateDayAheadStats() {
+  const tomorrow = getDateStr(1);
+
+  const calcStats = (src) => {
+    if (!src) return null;
+    const vals = src.data.filter(r => r.datum === tomorrow && r.value !== null).map(r => r.value);
+    if (!vals.length) return null;
+    return {
+      min: Math.min(...vals).toFixed(2),
+      max: Math.max(...vals).toFixed(2),
+      avg: (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2),
+    };
+  };
+
+  const epex   = calcStats(allData.epex);
+  const seepex = calcStats(allData.seepex);
+  const cropex = calcStats(allData.cropex);
+  const hupx   = calcStats(allData.hupx);
+  const mepx   = calcStats(allData.mepx);
+  const bsp    = calcStats(allData.bsp);
+  const epexhu = calcStats(allData.epexhu);
+
+  document.getElementById('daHupxMin').textContent    = hupx   ? hupx.min   : '—';
+  document.getElementById('daHupxMax').textContent    = hupx   ? hupx.max   : '—';
+  document.getElementById('daHupxAvg').textContent    = hupx   ? hupx.avg   : '—';
+  document.getElementById('daSeepexMin').textContent  = seepex ? seepex.min : '—';
+  document.getElementById('daSeepexMax').textContent  = seepex ? seepex.max : '—';
+  document.getElementById('daSeepexAvg').textContent  = seepex ? seepex.avg : '—';
+  document.getElementById('daCropexMin').textContent  = cropex ? cropex.min : '—';
+  document.getElementById('daCropexMax').textContent  = cropex ? cropex.max : '—';
+  document.getElementById('daCropexAvg').textContent  = cropex ? cropex.avg : '—';
+  document.getElementById('daEpexMin').textContent    = epex   ? epex.min   : '—';
+  document.getElementById('daEpexMax').textContent    = epex   ? epex.max   : '—';
+  document.getElementById('daEpexAvg').textContent    = epex   ? epex.avg   : '—';
+  document.getElementById('daMepxMin').textContent    = mepx   ? mepx.min   : '—';
+  document.getElementById('daMepxMax').textContent    = mepx   ? mepx.max   : '—';
+  document.getElementById('daMepxAvg').textContent    = mepx   ? mepx.avg   : '—';
+  document.getElementById('daBspMin').textContent     = bsp    ? bsp.min    : '—';
+  document.getElementById('daBspMax').textContent     = bsp    ? bsp.max    : '—';
+  document.getElementById('daBspAvg').textContent     = bsp    ? bsp.avg    : '—';
+  document.getElementById('daEpexhuMin').textContent  = epexhu ? epexhu.min : '—';
+  document.getElementById('daEpexhuMax').textContent  = epexhu ? epexhu.max : '—';
+  document.getElementById('daEpexhuAvg').textContent  = epexhu ? epexhu.avg : '—';
+  document.getElementById('daEpexNote').style.display = epex ? 'none' : '';
+}
+
+function toggleDaExtra() {
+  const el  = document.getElementById('daCardsExtra');
+  const btn = document.getElementById('daExtraBtn');
+  const show = el.style.display === 'none';
+  el.style.display = show ? '' : 'none';
+  btn.textContent = show ? '▲ Sakrij' : '▼ Učitaj još';
+}
+
+function toggleExtraStats() {
+  const el  = document.getElementById('statsGridExtra');
+  const btn = document.getElementById('extraStatsBtn');
+  const show = el.style.display === 'none';
+  el.style.display = show ? '' : 'none';
+  btn.textContent = show ? '▲ Sakrij' : '▼ Učitaj još';
+}
+
+// Postavi datum filter na danas
+document.getElementById('dateFilter').value = getDateStr(0);
+
+// Ucitaj podatke
+loadData();
+
+// Auto-refresh svakih sat (61 minuta)
+setInterval(loadData, 61 * 60 * 1000);
+</script>
+</body>
+</html>
