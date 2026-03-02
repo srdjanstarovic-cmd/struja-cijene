@@ -48,6 +48,24 @@ function get(url) {
 }
 
 // ─────────────────────────────────────────────
+// CET/CEST konverzija (Europe/Budapest = HR, HU, RS, SI, DE)
+// ─────────────────────────────────────────────
+function getCET(dt) {
+  const fmt = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Budapest",
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", hour12: false,
+  });
+  const parts = fmt.formatToParts(dt);
+  const get = type => parts.find(p => p.type === type).value;
+  const hour = parseInt(get("hour")) % 24; // 24 -> 0 (ponoc)
+  return {
+    datum: `${get("year")}-${get("month")}-${get("day")}`,
+    sat:   `${String(hour).padStart(2, "0")}:00`,
+  };
+}
+
+// ─────────────────────────────────────────────
 // Dohvacanje podataka
 // ─────────────────────────────────────────────
 async function fetchZone(zone, label, daysBack = 1) {
@@ -65,14 +83,12 @@ async function fetchZone(zone, label, daysBack = 1) {
 
   const { unix_seconds, price } = JSON.parse(res.body);
 
-  // Grupisanje u satne prosjeke (API vraca 15-min intervale)
+  // Grupisanje u satne prosjeke (API vraca 15-min intervale), sati u CET/CEST
   const byHour = {};
   unix_seconds.forEach((ts, i) => {
     if (price[i] === null) return;
-    const dt    = new Date(ts * 1000);
-    const datum = dt.toISOString().slice(0, 10);
-    const sat   = `${String(dt.getUTCHours()).padStart(2, "0")}:00`;
-    const key   = `${datum}_${sat}`;
+    const { datum, sat } = getCET(new Date(ts * 1000));
+    const key = `${datum}_${sat}`;
     if (!byHour[key]) byHour[key] = { datum, sat, sum: 0, count: 0 };
     byHour[key].sum += price[i];
     byHour[key].count++;
@@ -156,10 +172,9 @@ async function fetchENTSOE(domain, label, zoneCode) {
       const pos   = point.match(/<position>(\d+)<\/position>/);
       const price = point.match(/<price\.amount>([\d.]+)<\/price\.amount>/);
       if (!pos || !price) return;
-      const dt    = new Date(periodStart.getTime() + (parseInt(pos[1]) - 1) * intervalMs);
-      const datum = dt.toISOString().slice(0, 10);
-      const sat   = `${String(dt.getUTCHours()).padStart(2, "0")}:00`;
-      const key   = `${datum}_${sat}`;
+      const dt          = new Date(periodStart.getTime() + (parseInt(pos[1]) - 1) * intervalMs);
+      const { datum, sat } = getCET(dt);
+      const key         = `${datum}_${sat}`;
       if (!byHour[key]) byHour[key] = { datum, sat, sum: 0, count: 0 };
       byHour[key].sum += parseFloat(price[1]);
       byHour[key].count++;
@@ -238,7 +253,7 @@ async function fetchAllPrices() {
 function buildDayAheadEmail(data) {
   const tomorrow = new Date();
   tomorrow.setDate(tomorrow.getDate() + 1);
-  const tomorrowStr = tomorrow.toISOString().slice(0, 10);
+  const tomorrowStr = getCET(tomorrow).datum; // CET datum, slaze se s pohranjenim podacima
 
   const markets = [
     { key: "epex",   label: "EPEX SPOT (DE-LU)", color: "#58a6ff" },
