@@ -244,19 +244,19 @@
   <!-- Stat cards -->
   <div class="stats-grid" id="statsGrid">
     <div class="stat-card hupx">
-      <div class="label">HUPX trenutna cijena</div>
+      <div class="label" id="hupxLabel">HUPX day-ahead sutra</div>
       <div class="value" id="hupxCurrent">—</div>
-      <div class="sub">EUR/MWh · HU</div>
+      <div class="sub" id="hupxSub">EUR/MWh · HU</div>
     </div>
     <div class="stat-card seepex">
-      <div class="label">SEEPEX trenutna cijena</div>
+      <div class="label" id="seepexLabel">SEEPEX day-ahead sutra</div>
       <div class="value" id="seepexCurrent">—</div>
-      <div class="sub">EUR/MWh · RS</div>
+      <div class="sub" id="seepexSub">EUR/MWh · RS</div>
     </div>
     <div class="stat-card cropex">
-      <div class="label">CROPEX trenutna cijena</div>
+      <div class="label" id="cropexLabel">CROPEX day-ahead sutra</div>
       <div class="value" id="cropexCurrent">—</div>
-      <div class="sub">EUR/MWh · HR</div>
+      <div class="sub" id="cropexSub">EUR/MWh · HR</div>
     </div>
   </div>
   <div style="margin-bottom:12px">
@@ -299,13 +299,14 @@
   <!-- Day Ahead brzi filteri -->
   <div class="day-btns">
     <button class="day-btn" id="btnYesterday" onclick="setDay('yesterday')">◀ Juče</button>
-    <button class="day-btn active" id="btnToday" onclick="setDay('today')">Danas</button>
-    <button class="day-btn da" id="btnTomorrow" onclick="setDay('tomorrow')">Sutra — Day Ahead ▶</button>
+    <button class="day-btn" id="btnToday" onclick="setDay('today')">Danas</button>
+    <button class="day-btn da active" id="btnTomorrow" onclick="setDay('tomorrow')">Sutra — Day Ahead ▶</button>
+    <button class="day-btn da" id="btnDat" onclick="setDay('dat')">Prekosutra ▶▶</button>
   </div>
 
-  <!-- Day Ahead statistike (vidljivo samo kad je sutra odabrano) -->
-  <div id="daSection" style="display:none; margin-bottom:20px;">
-    <div class="da-section-title">Day Ahead statistike — sutra (moje berze)</div>
+  <!-- Day Ahead statistike -->
+  <div id="daSection" style="margin-bottom:20px;">
+    <div class="da-section-title" id="daSectionTitle">Day Ahead statistike — sutra (moje berze)</div>
     <div class="da-cards">
       <div class="da-card"><div class="label" style="color:#f78166">HUPX Min</div><div class="min" id="daHupxMin">—</div><div class="sub">EUR/MWh</div></div>
       <div class="da-card"><div class="label" style="color:#f78166">HUPX Max</div><div class="max" id="daHupxMax">—</div><div class="sub">EUR/MWh</div></div>
@@ -403,6 +404,10 @@ async function loadData() {
   renderAll();
   updateStats();
   updateTimestamp();
+  if (document.getElementById('daSection').style.display !== 'none') {
+    const activeBtn = document.querySelector('.day-btn.da.active');
+    updateDayAheadStats(activeBtn?.id === 'btnDat' ? 2 : 1);
+  }
 }
 
 async function refreshData() {
@@ -591,24 +596,48 @@ function sortTable(col) {
 }
 
 function updateStats() {
-  const now    = new Date();
-  const hour   = `${String(now.getHours()).padStart(2,'0')}:00`;
-  const today  = now.toISOString().slice(0, 10);
+  const now      = new Date();
+  const today    = getDateStr(0);
+  const tomorrow = getDateStr(1);
+  const hour     = `${String(now.getHours()).padStart(2,'0')}:00`;
 
+  // Prikazuje sutrašnji day-ahead prosjek; ako nema, pada na današnju trenutnu cijenu
+  const setDayAheadCard = (key, labelId, valueId, subId, marketName) => {
+    const src = allData[key];
+    if (!src) { document.getElementById(valueId).textContent = '—'; return; }
+    const tVals = src.data.filter(r => r.datum === tomorrow && r.value !== null).map(r => r.value);
+    if (tVals.length) {
+      const avg = (tVals.reduce((a,b) => a+b,0) / tVals.length).toFixed(2);
+      const min = Math.min(...tVals).toFixed(2);
+      const max = Math.max(...tVals).toFixed(2);
+      document.getElementById(labelId).textContent = marketName + ' prosjek sutra';
+      document.getElementById(valueId).textContent = avg;
+      document.getElementById(subId).textContent   = `min ${min} / max ${max} EUR/MWh`;
+      return;
+    }
+    // Fallback: danas
+    const match = src.data.find(r => r.datum === today && r.sat === hour);
+    const val   = (match && match.value !== null) ? match.value :
+                  (src.data.filter(r => r.datum === today && r.value !== null).slice(-1)[0] || {}).value;
+    document.getElementById(labelId).textContent = marketName + ' trenutna cijena';
+    document.getElementById(valueId).textContent = val !== undefined ? val.toFixed(2) : '—';
+    document.getElementById(subId).textContent   = 'EUR/MWh · danas';
+  };
+
+  setDayAheadCard('hupx',   'hupxLabel',   'hupxCurrent',   'hupxSub',   'HUPX');
+  setDayAheadCard('seepex', 'seepexLabel', 'seepexCurrent', 'seepexSub', 'SEEPEX');
+  setDayAheadCard('cropex', 'cropexLabel', 'cropexCurrent', 'cropexSub', 'CROPEX');
+
+  // Extra kartice — uvijek prikazuju današnju trenutnu cijenu
   const getCurrent = (src) => {
     if (!src) return '—';
     const match = src.data.find(r => r.datum === today && r.sat === hour);
     if (match && match.value !== null) return match.value.toFixed(2);
-    // Uzmi zadnji dostupni sat
     const available = src.data.filter(r => r.value !== null);
     if (available.length) return available[available.length - 1].value.toFixed(2);
     return '—';
   };
-
   document.getElementById('epexCurrent').textContent   = getCurrent(allData.epex);
-  document.getElementById('seepexCurrent').textContent = getCurrent(allData.seepex);
-  document.getElementById('cropexCurrent').textContent = getCurrent(allData.cropex);
-  document.getElementById('hupxCurrent').textContent   = getCurrent(allData.hupx);
   document.getElementById('mepxCurrent').textContent   = getCurrent(allData.mepx);
   document.getElementById('bspCurrent').textContent    = getCurrent(allData.bsp);
   document.getElementById('epexhuCurrent').textContent = getCurrent(allData.epexhu);
@@ -644,15 +673,15 @@ function getDateStr(offset) {
 
 function setDay(day) {
   document.querySelectorAll('.day-btn').forEach(b => b.classList.remove('active'));
-  const map = { yesterday: 'btnYesterday', today: 'btnToday', tomorrow: 'btnTomorrow' };
+  const map = { yesterday: 'btnYesterday', today: 'btnToday', tomorrow: 'btnTomorrow', dat: 'btnDat' };
   document.getElementById(map[day]).classList.add('active');
 
-  const offsets = { yesterday: -1, today: 0, tomorrow: 1 };
+  const offsets = { yesterday: -1, today: 0, tomorrow: 1, dat: 2 };
   document.getElementById('dateFilter').value = getDateStr(offsets[day]);
 
-  const isDayAhead = day === 'tomorrow';
+  const isDayAhead = day === 'tomorrow' || day === 'dat';
   document.getElementById('daSection').style.display = isDayAhead ? '' : 'none';
-  if (isDayAhead) updateDayAheadStats();
+  if (isDayAhead) updateDayAheadStats(offsets[day]);
 
   renderAll();
 }
@@ -664,12 +693,14 @@ function onDateChange() {
   renderAll();
 }
 
-function updateDayAheadStats() {
-  const tomorrow = getDateStr(1);
+function updateDayAheadStats(offset = 1) {
+  const dateStr   = getDateStr(offset);
+  const dayLabel  = offset === 2 ? 'prekosutra' : 'sutra';
+  document.getElementById('daSectionTitle').textContent = `Day Ahead statistike — ${dayLabel} (moje berze)`;
 
   const calcStats = (src) => {
     if (!src) return null;
-    const vals = src.data.filter(r => r.datum === tomorrow && r.value !== null).map(r => r.value);
+    const vals = src.data.filter(r => r.datum === dateStr && r.value !== null).map(r => r.value);
     if (!vals.length) return null;
     return {
       min: Math.min(...vals).toFixed(2),
@@ -726,8 +757,8 @@ function toggleExtraStats() {
   btn.textContent = show ? '▲ Sakrij' : '▼ Učitaj još';
 }
 
-// Postavi datum filter na danas
-document.getElementById('dateFilter').value = getDateStr(0);
+// Postavi datum filter na sutra (day-ahead default)
+document.getElementById('dateFilter').value = getDateStr(1);
 
 // Ucitaj podatke
 loadData();
