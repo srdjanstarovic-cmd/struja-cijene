@@ -8,7 +8,6 @@
   "dependencies": {
     "express": "*",
     "node-cron": "*",
-    "nodemailer": "^8.0.1",
     "xlsx": "*"
   }
 }

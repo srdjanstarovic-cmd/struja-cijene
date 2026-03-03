@@ -2,15 +2,11 @@
 // Dohvaca cijene svakih sat vremena, cuva ih i servira web stranicu
 // Start: node server.js
 
-const dns        = require("dns");
-dns.setDefaultResultOrder("ipv4first"); // Railway nema IPv6 rutu do Gmaila
-
 const https      = require("https");
 const express    = require("express");
 const cron       = require("node-cron");
 const path       = require("path");
 const fs         = require("fs");
-const nodemailer = require("nodemailer");
 const XLSX       = require("xlsx");
 
 const app  = express();
@@ -22,9 +18,9 @@ const ENTSOE_TOKEN = process.env.ENTSOE_TOKEN || "";
 // ─────────────────────────────────────────────
 // Email konfiguracija
 // ─────────────────────────────────────────────
-const EMAIL_FROM  = process.env.EMAIL_FROM  || "";
-const EMAIL_PASS  = process.env.EMAIL_PASS  || "";
-const EMAIL_TO    = process.env.EMAIL_TO    || "";
+const EMAIL_FROM     = process.env.EMAIL_FROM     || "";
+const EMAIL_TO       = process.env.EMAIL_TO       || "";
+const BREVO_API_KEY  = process.env.BREVO_API_KEY  || "";
 
 // Putanja gdje se cuvaju podaci
 const DATA_FILE = path.join(__dirname, "data.json");
@@ -379,21 +375,51 @@ function buildDayAheadEmail(data) {
   return { html, tomorrowStr, availableMarkets: availableMarkets.map(m => m.label) };
 }
 
-function createTransporter() {
-  return nodemailer.createTransport({
-    host: "smtp.gmail.com",
-    port: 465,
-    secure: true,
-    family: 4,            // forsira IPv4 (Railway nema IPv6 rutu do Gmaila)
-    auth: { user: EMAIL_FROM, pass: EMAIL_PASS },
-    connectionTimeout: 30000,
-    socketTimeout:     30000,
+// Slanje emaila putem Brevo HTTP API (bez SMTP — Railway blokira SMTP portove)
+function sendEmail({ to, subject, html, attachment }) {
+  if (!BREVO_API_KEY) throw new Error("BREVO_API_KEY nije postavljen u env vars");
+
+  const payload = {
+    sender:      { name: "Cijene Struje", email: EMAIL_FROM },
+    to:          [{ email: to }],
+    subject,
+    htmlContent: html,
+  };
+  if (attachment) {
+    payload.attachment = [{
+      name:    attachment.filename,
+      content: attachment.content.toString("base64"),
+    }];
+  }
+
+  const body = JSON.stringify(payload);
+  return new Promise((resolve, reject) => {
+    const req = https.request({
+      hostname: "api.brevo.com",
+      path:     "/v3/smtp/email",
+      method:   "POST",
+      headers: {
+        "Content-Type":   "application/json",
+        "api-key":        BREVO_API_KEY,
+        "Content-Length": Buffer.byteLength(body),
+      },
+    }, (res) => {
+      let data = "";
+      res.on("data", d => (data += d));
+      res.on("end", () => {
+        if (res.statusCode >= 200 && res.statusCode < 300) resolve(JSON.parse(data));
+        else reject(new Error(`Brevo API greška ${res.statusCode}: ${data.slice(0, 200)}`));
+      });
+    });
+    req.on("error", reject);
+    req.write(body);
+    req.end();
   });
 }
 
 async function sendDayAheadEmail(data) {
-  if (EMAIL_FROM === "TVOJ_GMAIL@gmail.com" || EMAIL_PASS === "TVOJA_APP_LOZINKA") {
-    console.log("  Email preskocen — konfigurisi EMAIL_FROM i EMAIL_PASS u server.js");
+  if (!BREVO_API_KEY || !EMAIL_FROM) {
+    console.log("  Email preskocen — postavi BREVO_API_KEY i EMAIL_FROM u Railway Variables");
     return;
   }
 
@@ -403,17 +429,14 @@ async function sendDayAheadEmail(data) {
     return;
   }
 
-  const transporter = createTransporter();
-
-  await transporter.sendMail({
-    from: `"Cijene Struje" <${EMAIL_FROM}>`,
-    to: EMAIL_TO,
+  await sendEmail({
+    to:      EMAIL_TO,
     subject: `⚡ Day-Ahead cijene struje — ${result.tomorrowStr}`,
-    html: result.html,
+    html:    result.html,
   });
 
   console.log(`  Email poslan na ${EMAIL_TO} (${result.availableMarkets.join(", ")})`);
-  dayAheadEmailSentDate = result.tomorrowStr; // Oznaci da je mail poslan
+  dayAheadEmailSentDate = result.tomorrowStr;
 }
 
 // ─────────────────────────────────────────────
@@ -427,7 +450,7 @@ const negativeAlertSent = {};
 let dayAheadEmailSentDate = "";
 
 async function checkNegativePrices(data) {
-  if (EMAIL_FROM === "TVOJ_GMAIL@gmail.com" || EMAIL_PASS === "TVOJA_APP_LOZINKA") return;
+  if (!BREVO_API_KEY || !EMAIL_FROM) return;
 
   const now   = new Date();
   const today = now.toISOString().slice(0, 10);
@@ -503,11 +526,8 @@ async function checkNegativePrices(data) {
 </body>
 </html>`;
 
-  const transporter = createTransporter();
-
-  await transporter.sendMail({
-    from: `"Cijene Struje" <${EMAIL_FROM}>`,
-    to: EMAIL_TO,
+  await sendEmail({
+    to:      EMAIL_TO,
     subject: `⚠️ ALARM: Negativne cijene struje — ${today} ${hour}`,
     html,
   });
@@ -574,9 +594,9 @@ app.get("/api/send-email", async (req, res) => {
 app.post("/api/send-xls", async (req, res) => {
   try {
     const { email, markets } = req.body;
-    if (!email)                 return res.status(400).json({ ok: false, error: "Email je obavezan" });
-    if (!markets?.length)       return res.status(400).json({ ok: false, error: "Odaberite bar jednu berzu" });
-    if (!EMAIL_FROM || !EMAIL_PASS) return res.status(500).json({ ok: false, error: "Email konfiguracija nije postavljena na serveru" });
+    if (!email)           return res.status(400).json({ ok: false, error: "Email je obavezan" });
+    if (!markets?.length) return res.status(400).json({ ok: false, error: "Odaberite bar jednu berzu" });
+    if (!BREVO_API_KEY || !EMAIL_FROM) return res.status(500).json({ ok: false, error: "BREVO_API_KEY ili EMAIL_FROM nije postavljen u Railway Variables" });
 
     const tomorrow    = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
@@ -631,18 +651,14 @@ app.post("/api/send-xls", async (req, res) => {
     XLSX.utils.book_append_sheet(wb, ws, `Sutra ${tomorrowStr}`);
     const buffer = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
 
-    const transporter = createTransporter();
-
-    await transporter.sendMail({
-      from: `"Cijene Struje" <${EMAIL_FROM}>`,
-      to: email,
+    await sendEmail({
+      to:      email,
       subject: `⚡ Day-Ahead cijene struje — ${tomorrowStr}`,
-      text: `U prilogu su day-ahead cijene struje za sutra (${tomorrowStr}) za berze: ${selected.map(k => marketLabels[k]).join(", ")}.`,
-      attachments: [{
+      html:    `<p style="font-family:sans-serif;color:#e6edf3;background:#0d1117;padding:24px">U prilogu su day-ahead cijene struje za sutra <strong>(${tomorrowStr})</strong> za berze: ${selected.map(k => marketLabels[k]).join(", ")}.</p>`,
+      attachment: {
         filename: `cijene-struje-${tomorrowStr}.xlsx`,
-        content: buffer,
-        contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      }],
+        content:  buffer,
+      },
     });
 
     console.log(`  XLS poslan na ${email} (${selected.join(", ")})`);
