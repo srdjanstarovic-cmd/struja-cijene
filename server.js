@@ -381,6 +381,7 @@ function createTransporter() {
     host: "smtp.gmail.com",
     port: 465,
     secure: true,
+    family: 4,            // forsira IPv4 (Railway nema IPv6 rutu do Gmaila)
     auth: { user: EMAIL_FROM, pass: EMAIL_PASS },
     connectionTimeout: 30000,
     socketTimeout:     30000,
