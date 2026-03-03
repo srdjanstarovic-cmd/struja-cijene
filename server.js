@@ -376,6 +376,17 @@ function buildDayAheadEmail(data) {
   return { html, tomorrowStr, availableMarkets: availableMarkets.map(m => m.label) };
 }
 
+function createTransporter() {
+  return nodemailer.createTransport({
+    host: "smtp.gmail.com",
+    port: 465,
+    secure: true,
+    auth: { user: EMAIL_FROM, pass: EMAIL_PASS },
+    connectionTimeout: 30000,
+    socketTimeout:     30000,
+  });
+}
+
 async function sendDayAheadEmail(data) {
   if (EMAIL_FROM === "TVOJ_GMAIL@gmail.com" || EMAIL_PASS === "TVOJA_APP_LOZINKA") {
     console.log("  Email preskocen — konfigurisi EMAIL_FROM i EMAIL_PASS u server.js");
@@ -388,10 +399,7 @@ async function sendDayAheadEmail(data) {
     return;
   }
 
-  const transporter = nodemailer.createTransport({
-    service: "gmail",
-    auth: { user: EMAIL_FROM, pass: EMAIL_PASS },
-  });
+  const transporter = createTransporter();
 
   await transporter.sendMail({
     from: `"Cijene Struje" <${EMAIL_FROM}>`,
@@ -491,10 +499,7 @@ async function checkNegativePrices(data) {
 </body>
 </html>`;
 
-  const transporter = nodemailer.createTransport({
-    service: "gmail",
-    auth: { user: EMAIL_FROM, pass: EMAIL_PASS },
-  });
+  const transporter = createTransporter();
 
   await transporter.sendMail({
     from: `"Cijene Struje" <${EMAIL_FROM}>`,
@@ -622,10 +627,7 @@ app.post("/api/send-xls", async (req, res) => {
     XLSX.utils.book_append_sheet(wb, ws, `Sutra ${tomorrowStr}`);
     const buffer = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
 
-    const transporter = nodemailer.createTransport({
-      service: "gmail",
-      auth: { user: EMAIL_FROM, pass: EMAIL_PASS },
-    });
+    const transporter = createTransporter();
 
     await transporter.sendMail({
       from: `"Cijene Struje" <${EMAIL_FROM}>`,
