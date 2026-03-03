@@ -225,6 +225,85 @@
     .da-card .avg2 { color: #58a6ff; font-weight: 700; font-size: 1.1rem; }
     .da-card .sub  { font-size: 0.72rem; color: #8b949e; margin-top: 2px; }
     .da-section-title { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 1.5px; color: #8b949e; margin-bottom: 10px; }
+
+    /* XLS Modal */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.75);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal-box {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 12px;
+      padding: 28px;
+      max-width: 460px;
+      width: 92%;
+    }
+    .modal-box h3 { font-size: 1rem; margin-bottom: 18px; color: #f0f6fc; }
+    .modal-label { font-size: 0.8rem; color: #8b949e; margin-bottom: 6px; display: block; }
+    .modal-input {
+      width: 100%;
+      background: #0d1117;
+      border: 1px solid #30363d;
+      color: #e6edf3;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 0.88rem;
+      margin-bottom: 18px;
+    }
+    .modal-input:focus { outline: none; border-color: #58a6ff; }
+    .modal-markets {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-bottom: 22px;
+    }
+    .modal-check {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.84rem;
+      color: #c9d1d9;
+      background: #0d1117;
+      border: 1px solid #21262d;
+      border-radius: 6px;
+      padding: 7px 10px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .modal-check input { accent-color: #58a6ff; cursor: pointer; }
+    .modal-check.checked { border-color: #58a6ff; background: #0d1f3c; }
+    .modal-btns { display: flex; gap: 10px; justify-content: flex-end; }
+    .btn-primary {
+      background: #1f6feb;
+      border: none;
+      color: #fff;
+      padding: 8px 20px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.88rem;
+      font-weight: 600;
+      transition: background 0.15s;
+    }
+    .btn-primary:hover { background: #388bfd; }
+    .btn-primary:disabled { opacity: 0.5; cursor: default; }
+    .btn-secondary {
+      background: transparent;
+      border: 1px solid #30363d;
+      color: #8b949e;
+      padding: 8px 18px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.88rem;
+    }
+    .btn-secondary:hover { border-color: #8b949e; color: #c9d1d9; }
+    .modal-status { font-size: 0.82rem; margin-top: 12px; text-align: center; min-height: 20px; }
   </style>
 </head>
 <body>
@@ -302,6 +381,7 @@
     <button class="day-btn" id="btnToday" onclick="setDay('today')">Danas</button>
     <button class="day-btn da active" id="btnTomorrow" onclick="setDay('tomorrow')">Sutra — Day Ahead ▶</button>
     <button class="day-btn da" id="btnDat" onclick="setDay('dat')">Prekosutra ▶▶</button>
+    <button class="day-btn" onclick="openXlsModal()" style="margin-left:auto;border-color:#58a6ff;color:#58a6ff">📊 Pošalji XLS</button>
   </div>
 
   <!-- Day Ahead statistike -->
@@ -390,6 +470,44 @@
     </div>
   </div>
 
+</div>
+
+<!-- XLS Modal -->
+<div class="modal-overlay" id="xlsModal" onclick="xlsModalBgClick(event)">
+  <div class="modal-box">
+    <h3>📊 Pošalji cijene sutra kao Excel</h3>
+    <label class="modal-label">Email adresa:</label>
+    <input class="modal-input" type="email" id="xlsEmail" placeholder="vas@email.com">
+    <label class="modal-label">Odaberi berze:</label>
+    <div class="modal-markets" id="xlsMarkets">
+      <label class="modal-check checked" id="chk-seepex">
+        <input type="checkbox" value="seepex" checked onchange="updateCheckStyle(this)"> SEEPEX (RS)
+      </label>
+      <label class="modal-check" id="chk-hupx">
+        <input type="checkbox" value="hupx" onchange="updateCheckStyle(this)"> HUPX (HU)
+      </label>
+      <label class="modal-check" id="chk-cropex">
+        <input type="checkbox" value="cropex" onchange="updateCheckStyle(this)"> CROPEX (HR)
+      </label>
+      <label class="modal-check" id="chk-epex">
+        <input type="checkbox" value="epex" onchange="updateCheckStyle(this)"> EPEX SPOT (DE-LU)
+      </label>
+      <label class="modal-check" id="chk-mepx">
+        <input type="checkbox" value="mepx" onchange="updateCheckStyle(this)"> MEPX (ME)
+      </label>
+      <label class="modal-check" id="chk-bsp">
+        <input type="checkbox" value="bsp" onchange="updateCheckStyle(this)"> BSP SouthPool (SI)
+      </label>
+      <label class="modal-check" id="chk-epexhu">
+        <input type="checkbox" value="epexhu" onchange="updateCheckStyle(this)"> EPEX HU
+      </label>
+    </div>
+    <div class="modal-btns">
+      <button class="btn-secondary" onclick="closeXlsModal()">Odustani</button>
+      <button class="btn-primary" id="xlsSendBtn" onclick="sendXls()">Pošalji</button>
+    </div>
+    <div class="modal-status" id="xlsStatus"></div>
+  </div>
 </div>
 
 <script>
@@ -755,6 +873,70 @@ function toggleExtraStats() {
   const show = el.style.display === 'none';
   el.style.display = show ? '' : 'none';
   btn.textContent = show ? '▲ Sakrij' : '▼ Učitaj još';
+}
+
+// ── XLS Modal ──────────────────────────────────
+function openXlsModal() {
+  document.getElementById('xlsModal').classList.add('open');
+  document.getElementById('xlsStatus').textContent = '';
+  document.getElementById('xlsSendBtn').disabled = false;
+  document.getElementById('xlsEmail').focus();
+}
+
+function closeXlsModal() {
+  document.getElementById('xlsModal').classList.remove('open');
+}
+
+function xlsModalBgClick(e) {
+  if (e.target === document.getElementById('xlsModal')) closeXlsModal();
+}
+
+function updateCheckStyle(input) {
+  input.closest('.modal-check').classList.toggle('checked', input.checked);
+}
+
+async function sendXls() {
+  const email = document.getElementById('xlsEmail').value.trim();
+  if (!email) {
+    document.getElementById('xlsStatus').style.color = '#f85149';
+    document.getElementById('xlsStatus').textContent = 'Unesite email adresu.';
+    return;
+  }
+
+  const markets = [...document.querySelectorAll('#xlsMarkets input[type=checkbox]:checked')].map(c => c.value);
+  if (!markets.length) {
+    document.getElementById('xlsStatus').style.color = '#f85149';
+    document.getElementById('xlsStatus').textContent = 'Odaberite bar jednu berzu.';
+    return;
+  }
+
+  const btn = document.getElementById('xlsSendBtn');
+  btn.disabled = true;
+  btn.textContent = 'Šaljem...';
+  document.getElementById('xlsStatus').textContent = '';
+
+  try {
+    const res  = await fetch('/api/send-xls', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, markets }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      document.getElementById('xlsStatus').style.color = '#3fb950';
+      document.getElementById('xlsStatus').textContent = '✓ ' + data.message;
+      setTimeout(closeXlsModal, 2500);
+    } else {
+      document.getElementById('xlsStatus').style.color = '#f85149';
+      document.getElementById('xlsStatus').textContent = 'Greška: ' + data.error;
+    }
+  } catch (e) {
+    document.getElementById('xlsStatus').style.color = '#f85149';
+    document.getElementById('xlsStatus').textContent = 'Greška pri slanju zahtjeva.';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Pošalji';
+  }
 }
 
 // Postavi datum filter na sutra (day-ahead default)

@@ -8,6 +8,7 @@ const cron       = require("node-cron");
 const path       = require("path");
 const fs         = require("fs");
 const nodemailer = require("nodemailer");
+const XLSX       = require("xlsx");
 
 const app  = express();
 const PORT = process.env.PORT || 4000;
@@ -523,6 +524,7 @@ function loadCache() {
 // Routes
 // ─────────────────────────────────────────────
 app.use(express.static(path.join(__dirname, "public")));
+app.use(express.json());
 
 app.get("/api/prices", (req, res) => {
   res.json(cachedData);
@@ -556,6 +558,91 @@ app.get("/api/send-email", async (req, res) => {
     await sendDayAheadEmail(cachedData);
     res.json({ ok: true, message: `Email poslan na ${EMAIL_TO}` });
   } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.post("/api/send-xls", async (req, res) => {
+  try {
+    const { email, markets } = req.body;
+    if (!email)                 return res.status(400).json({ ok: false, error: "Email je obavezan" });
+    if (!markets?.length)       return res.status(400).json({ ok: false, error: "Odaberite bar jednu berzu" });
+    if (!EMAIL_FROM || !EMAIL_PASS) return res.status(500).json({ ok: false, error: "Email konfiguracija nije postavljena na serveru" });
+
+    const tomorrow    = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowStr = getCET(tomorrow).datum;
+
+    const marketLabels = {
+      seepex: "SEEPEX (RS)",
+      hupx:   "HUPX (HU)",
+      cropex: "CROPEX (HR)",
+      epex:   "EPEX SPOT (DE-LU)",
+      mepx:   "MEPX (ME)",
+      bsp:    "BSP SouthPool (SI)",
+      epexhu: "EPEX (HU)",
+    };
+
+    const selected = markets.filter(k => cachedData[k] && marketLabels[k]);
+    if (!selected.length) return res.status(400).json({ ok: false, error: "Nema podataka za odabrane berze" });
+
+    const hours = Array.from({ length: 24 }, (_, i) => `${String(i).padStart(2, "0")}:00`);
+
+    // Satni podaci
+    const rows = [["Sat (CET)", ...selected.map(k => marketLabels[k])]];
+    hours.forEach(h => {
+      const row = [h];
+      selected.forEach(k => {
+        const rec = cachedData[k]?.data.find(r => r.datum === tomorrowStr && r.sat === h);
+        row.push(rec?.value !== undefined && rec?.value !== null ? rec.value : null);
+      });
+      rows.push(row);
+    });
+
+    // Statistike
+    rows.push([]);
+    rows.push(["Statistike", ...selected.map(k => marketLabels[k])]);
+    ["Min", "Max", "Prosjek"].forEach(stat => {
+      const row = [stat];
+      selected.forEach(k => {
+        const vals = (cachedData[k]?.data || [])
+          .filter(r => r.datum === tomorrowStr && r.value !== null)
+          .map(r => r.value);
+        if (!vals.length) { row.push(null); return; }
+        if (stat === "Min")    row.push(Math.min(...vals));
+        else if (stat === "Max") row.push(Math.max(...vals));
+        else row.push(Number((vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2)));
+      });
+      rows.push(row);
+    });
+
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws["!cols"] = [{ wch: 12 }, ...selected.map(() => ({ wch: 22 }))];
+    XLSX.utils.book_append_sheet(wb, ws, `Sutra ${tomorrowStr}`);
+    const buffer = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+
+    const transporter = nodemailer.createTransport({
+      service: "gmail",
+      auth: { user: EMAIL_FROM, pass: EMAIL_PASS },
+    });
+
+    await transporter.sendMail({
+      from: `"Cijene Struje" <${EMAIL_FROM}>`,
+      to: email,
+      subject: `⚡ Day-Ahead cijene struje — ${tomorrowStr}`,
+      text: `U prilogu su day-ahead cijene struje za sutra (${tomorrowStr}) za berze: ${selected.map(k => marketLabels[k]).join(", ")}.`,
+      attachments: [{
+        filename: `cijene-struje-${tomorrowStr}.xlsx`,
+        content: buffer,
+        contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      }],
+    });
+
+    console.log(`  XLS poslan na ${email} (${selected.join(", ")})`);
+    res.json({ ok: true, message: `Excel fajl poslan na ${email}` });
+  } catch (e) {
+    console.error("Send XLS greška:", e.message);
     res.status(500).json({ ok: false, error: e.message });
   }
 });
