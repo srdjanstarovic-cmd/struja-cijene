@@ -2,6 +2,9 @@
 // Dohvaca cijene svakih sat vremena, cuva ih i servira web stranicu
 // Start: node server.js
 
+const dns        = require("dns");
+dns.setDefaultResultOrder("ipv4first"); // Railway nema IPv6 rutu do Gmaila
+
 const https      = require("https");
 const express    = require("express");
 const cron       = require("node-cron");
